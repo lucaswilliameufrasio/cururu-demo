@@ -1,0 +1,14 @@
+version = 1
+
+[review]
+max_diff_bytes = 50000
+chunk_bytes = 15000
+ignore = ["**/Cargo.lock"]
+language = "pt-BR"
+
+[context]
+conventions = ["CONTRIBUTING.md"]
+max_bytes = 10000
+
+[summary]
+show_usage = true
