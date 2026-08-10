@@ -9,6 +9,7 @@ max_diff_bytes = 50000
 chunk_bytes = 15000
 ignore = ["**/Cargo.lock"]
 language = "pt-BR"
+comment_mode = "inline"
 
 [context]
 conventions = ["CONTRIBUTING.md"]
