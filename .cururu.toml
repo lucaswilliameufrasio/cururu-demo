@@ -15,4 +15,5 @@ conventions = ["CONTRIBUTING.md"]
 max_bytes = 10000
 
 [summary]
+show_cost = true
 show_usage = true
