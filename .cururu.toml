@@ -10,10 +10,29 @@ chunk_bytes = 15000
 ignore = ["**/Cargo.lock"]
 language = "pt-BR"
 comment_mode = "inline"
+profile = "balanced"
+
+[policy]
+minimum_confidence = 0.65
+max_findings = 30
+fail_on = "off"
+allowed_severities = ["critical", "high", "medium", "low"]
+suggested_changes = false
+incremental = false
+synthesis = false
+focus = []
 
 [context]
 conventions = ["CONTRIBUTING.md"]
 max_bytes = 10000
+
+[context.auto]
+enabled = false
+max_bytes = 50000
+max_files = 20
+per_file_bytes = 12000
+include = ["src/**", "tests/**"]
+exclude = ["**/generated/**", "**/*.min.js"]
 
 [summary]
 show_cost = true
