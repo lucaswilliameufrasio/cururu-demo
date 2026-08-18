@@ -1,7 +1,7 @@
 name: Cururu PR Review
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   issue_comment:
     types: [created]
@@ -10,16 +10,62 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  actions: read
 
 concurrency:
   group: cururu-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
-  review:
+  analyzers:
     if: (github.event_name == 'issue_comment' || github.event.pull_request.draft == false) && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run analyzers
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts
+          cargo check --message-format json 2> artifacts/check.stderr || true
+          cargo clippy --message-format json 2> artifacts/clippy.stderr || true
+      - name: Emit manifest
+        run: |
+          python3 - <<'PY'
+          import json, os
+          head = os.environ["HEAD_SHA"]
+          def status(name):
+              p = f"artifacts/{name}.stderr"
+              if not os.path.exists(p):
+                  return "not_run", None
+              content = open(p, "r", errors="replace").read()
+              return ("failed", content.strip()[:400]) if "error" in content.lower() else ("passed", None)
+          tools = []
+          for name in ("check", "clippy"):
+              st, msg = status(name)
+              tools.append({"name": f"cargo-{name}", "status": st,
+                            "exit_code": 1 if st == "failed" else 0, "message": msg})
+          with open("artifacts/analysis.json", "w") as f:
+              json.dump({"schema_version": 1, "commit_sha": head, "tools": tools}, f, indent=2)
+          PY
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analysis
+          path: artifacts/
+          retention-days: 3
+
+  review:
+    needs: analyzers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: analysis
+          path: artifacts
       - uses: lucaswilliameufrasio/cururu@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
