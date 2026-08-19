@@ -59,27 +59,33 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const head = process.env.HEAD_SHA;
-            const run = await github.rest.checks.create({
+            const created = await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'demo-linter',
               head_sha: head,
+              status: 'in_progress',
+            });
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: created.data.id,
               status: 'completed',
               conclusion: 'failure',
               output: {
                 title: 'demo-linter',
                 summary: 'Demo linter found an issue.',
+                annotations: [{
+                  path: 'src/main.rs',
+                  start_line: 59,
+                  end_line: 59,
+                  annotation_level: 'failure',
+                  message: 'Command injection via shell interpolation.',
+                  title: 'command-injection',
+                }],
               },
-              annotations: [{
-                path: 'src/main.rs',
-                start_line: 59,
-                end_line: 59,
-                annotation_level: 'failure',
-                message: 'Command injection via shell interpolation.',
-                title: 'command-injection',
-              }],
             });
-            core.notice(`Created demo check run ${run.data.id}`);
+            core.notice(`Created demo check run ${created.data.id}`);
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.issue.pull_request.head.sha }}
       - uses: actions/upload-artifact@v4
