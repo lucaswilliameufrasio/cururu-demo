@@ -19,7 +19,7 @@ fail_on = "off"
 allowed_severities = ["critical", "high", "medium", "low"]
 suggested_changes = false
 incremental = false
-synthesis = false
+synthesis = true
 focus = []
 
 [context]
@@ -43,3 +43,5 @@ enabled = true
 manifest = "artifacts/analysis.json"
 max_findings = 100
 require_current_head = true
+check_runs = true
+check_run_names = []
