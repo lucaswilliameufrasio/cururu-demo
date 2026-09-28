@@ -2,7 +2,7 @@ version = 1
 
 [provider]
 name = "openrouter"
-model = "openai/gpt-5.6-luna"
+model = "openai/gpt-6-luna"
 
 [review]
 max_diff_bytes = 50000
@@ -19,7 +19,8 @@ fail_on = "off"
 allowed_severities = ["critical", "high", "medium", "low"]
 suggested_changes = false
 incremental = false
-synthesis = false
+# Merge duplicate LLM/check-run findings while preferring analyzer evidence.
+synthesis = true
 focus = []
 
 [context]
@@ -37,3 +38,13 @@ exclude = ["**/generated/**", "**/*.min.js"]
 [summary]
 show_cost = true
 show_usage = true
+
+[analysis]
+# Exercise both the workflow-produced lifecycle manifest and GitHub annotations.
+enabled = true
+manifest = "artifacts/analysis.json"
+max_findings = 100
+require_current_head = true
+check_runs = true
+# Restrict imported annotations to the demo check created by the workflow.
+check_run_names = ["demo-linter"]
