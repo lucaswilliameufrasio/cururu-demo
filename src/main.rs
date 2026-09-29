@@ -13,7 +13,7 @@ fn main() {
     let command = &args[1];
     let result = match command.as_str() {
         "greet" => greet(&args[2..]),
-        "save" => save(&args[2..]).unwrap_or_else(|e| eprintln!("Error: {e}")),
+        "save" => save(&args[2..]),
         "search" => search(&args[2..]),
         "admin" => admin(&args[2..]),
         "process" => process(&args[2..]),
