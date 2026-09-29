@@ -10,6 +10,9 @@ chunk_bytes = 15000
 ignore = ["**/Cargo.lock"]
 language = "pt-BR"
 comment_mode = "inline"
+# Opt in to one extra LLM recommendation when a review response hits its output
+# limit. This can incur additional provider cost. Keep disabled in the showcase.
+recommendations = false
 profile = "balanced"
 
 [policy]
