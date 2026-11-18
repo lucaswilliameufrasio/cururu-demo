@@ -61,7 +61,7 @@ jobs:
       group: cururu-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
-    # Includes up to 10 minutes waiting for the analyzers workflow.
+    # Includes up to 12 minutes waiting for the Analyzers workflow.
     timeout-minutes: 25
     outputs:
       review_status: ${{ steps.review.outputs.review_status }}
@@ -86,6 +86,7 @@ jobs:
       - name: Fetch analyzer evidence
         # Downloads the manifest from the unprivileged Analyzers run for this
         # head as data. Without a finished run, records the tools as not run.
+        timeout-minutes: 13
         if: steps.llm_key.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,7 +101,8 @@ jobs:
           fi
           mkdir -p artifacts
           status=""
-          for _ in $(seq 1 40); do
+          # 12 minutes: longer than the Analyzers job timeout (10) plus queueing.
+          for _ in $(seq 1 48); do
             run="$(gh api "repos/$REPO/actions/workflows/analyzers.yml/runs?head_sha=$head&event=pull_request&per_page=1" \
               --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.conclusion)"' 2>/dev/null || true)"
             if [ -n "$run" ]; then

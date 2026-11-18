@@ -18,7 +18,8 @@ jobs:
   analyzers:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Keep below the review job's 12-minute wait for this run.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
