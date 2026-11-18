@@ -1,0 +1,66 @@
+name: Analyzers
+
+# Builds and lints the pull request's code without secrets and with a
+# read-only token. The privileged Cururu review workflow only downloads the
+# resulting manifest as data; it never checks out or runs PR code.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analyzers-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  analyzers:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    # Keep below the review job's 12-minute wait for this run.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The head commit, so the manifest names the commit Cururu reviews.
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master @ 2026-11-15
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Run analyzers
+        run: |
+          mkdir -p artifacts
+          set +e
+          cargo check --message-format json > artifacts/check.log 2>&1
+          echo $? > artifacts/check.exit
+          cargo clippy --message-format json > artifacts/clippy.log 2>&1
+          echo $? > artifacts/clippy.exit
+      - name: Emit manifest
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+          tools = []
+          for name in ("check", "clippy"):
+              exit_path = f"artifacts/{name}.exit"
+              log_path = f"artifacts/{name}.log"
+              if not os.path.exists(exit_path):
+                  tools.append({"name": f"cargo-{name}", "status": "not_run", "exit_code": 0, "message": None})
+                  continue
+              code = int(open(exit_path).read().strip() or 1)
+              message = None
+              if code != 0 and os.path.exists(log_path):
+                  message = open(log_path, errors="replace").read().strip()[-400:]
+              tools.append({"name": f"cargo-{name}", "status": "passed" if code == 0 else "failed",
+                            "exit_code": code, "message": message})
+          with open("artifacts/analysis.json", "w") as f:
+              json.dump({"schema_version": 1, "commit_sha": head, "tools": tools}, f, indent=2)
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: analysis
+          path: artifacts/
+          retention-days: 3

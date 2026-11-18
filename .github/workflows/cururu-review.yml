@@ -52,66 +52,17 @@ jobs:
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
-  analyzers:
-    needs: gate
-    if: needs.gate.outputs.run == 'true'
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || format('refs/pull/{0}/head', github.event.issue.number) }}
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master @ 2026-11-15
-        with:
-          toolchain: stable
-          components: clippy
-      - name: Run analyzers
-        run: |
-          mkdir -p artifacts
-          set +e
-          cargo check --message-format json > artifacts/check.log 2>&1
-          echo $? > artifacts/check.exit
-          cargo clippy --message-format json > artifacts/clippy.log 2>&1
-          echo $? > artifacts/clippy.exit
-      - name: Emit manifest
-        run: |
-          python3 - <<'PY'
-          import json, os, subprocess
-          head = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
-          tools = []
-          for name in ("check", "clippy"):
-              exit_path = f"artifacts/{name}.exit"
-              log_path = f"artifacts/{name}.log"
-              if not os.path.exists(exit_path):
-                  tools.append({"name": f"cargo-{name}", "status": "not_run", "exit_code": 0, "message": None})
-                  continue
-              code = int(open(exit_path).read().strip() or 1)
-              message = None
-              if code != 0 and os.path.exists(log_path):
-                  message = open(log_path, errors="replace").read().strip()[-400:]
-              tools.append({"name": f"cargo-{name}", "status": "passed" if code == 0 else "failed",
-                            "exit_code": code, "message": message})
-          with open("artifacts/analysis.json", "w") as f:
-              json.dump({"schema_version": 1, "commit_sha": head, "tools": tools}, f, indent=2)
-          PY
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: analysis
-          path: artifacts/
-          retention-days: 3
-
   review:
     # Draft PRs are reviewed on ready_for_review, not on each draft push.
-    needs: [gate, analyzers]
+    needs: gate
     if: needs.gate.outputs.run == 'true'
     # Only validated events reach this group; a newer review cancels an older one.
     concurrency:
       group: cururu-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Includes up to 12 minutes waiting for the Analyzers workflow.
+    timeout-minutes: 25
     outputs:
       review_status: ${{ steps.review.outputs.review_status }}
       candidate_digest: ${{ steps.review.outputs.candidate_digest }}
@@ -132,10 +83,49 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: analysis
-          path: artifacts
+      - name: Fetch analyzer evidence
+        # Downloads the manifest from the unprivileged Analyzers run for this
+        # head as data. Without a finished run, records the tools as not run.
+        timeout-minutes: 13
+        if: steps.llm_key.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+        run: |
+          set -euo pipefail
+          head="$EVENT_HEAD"
+          if [ -z "$head" ]; then
+            head="$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)"
+          fi
+          mkdir -p artifacts
+          status=""
+          # 12 minutes: longer than the Analyzers job timeout (10) plus queueing.
+          for _ in $(seq 1 48); do
+            run="$(gh api "repos/$REPO/actions/workflows/analyzers.yml/runs?head_sha=$head&event=pull_request&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.conclusion)"' 2>/dev/null || true)"
+            if [ -n "$run" ]; then
+              read -r run_id status conclusion <<< "$run"
+            fi
+            if [ "$status" = "completed" ]; then
+              break
+            fi
+            sleep 15
+          done
+          if [ "$status" = "completed" ] && gh run download "$run_id" -R "$REPO" -n analysis -D artifacts; then
+            echo "Analyzer evidence from run $run_id ($conclusion)."
+          else
+            echo "::warning::No finished Analyzers run for $head; recording the tools as not run."
+            HEAD="$head" python3 - <<'PY'
+          import json, os
+          tools = [{"name": name, "status": "not_run", "exit_code": None,
+                    "message": "Analyzers workflow did not finish for this head"}
+                   for name in ("cargo-check", "cargo-clippy")]
+          with open("artifacts/analysis.json", "w") as f:
+              json.dump({"schema_version": 1, "commit_sha": os.environ["HEAD"], "tools": tools}, f, indent=2)
+          PY
+          fi
       - name: Review PR
         id: review
         if: steps.llm_key.outputs.skip == 'false'
