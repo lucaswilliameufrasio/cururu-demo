@@ -15,6 +15,7 @@ fn main() {
         "search" => search(&args[2..]).unwrap_or_else(|e| eprintln!("Error: {e}")),
         "admin" => admin(&args[2..]),
         "process" => process(&args[2..]),
+        "export" => export(&args[2..]),
         _ => eprintln!("Unknown command: {command}"),
     }
 }
@@ -135,5 +136,24 @@ mod tests {
     fn admin_blocks_root() {
         let output = std::process::Command::new("true").output().unwrap();
         assert!(output.status.success());
+    }
+}
+
+/// Best-effort export run by a nightly job: copies every data file listed in
+/// the manifest into ./export, skipping the ones that fail.
+fn export(args: &[String]) {
+    let manifest = if args.is_empty() { "./data/manifest.txt" } else { &args[0] };
+    let list = std::fs::read_to_string(manifest).unwrap_or_default();
+    let _ = std::fs::create_dir_all("./export");
+    for name in list.lines().map(str::trim).filter(|name| !name.is_empty()) {
+        if name.contains("..") || name.contains('/') {
+            eprintln!("skipping {name}: invalid name");
+            continue;
+        }
+        let source = format!("./data/{name}");
+        let target = format!("./export/{name}");
+        if let Err(error) = std::fs::copy(&source, &target) {
+            eprintln!("skipping {name}: {error}");
+        }
     }
 }
